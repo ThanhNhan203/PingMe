@@ -21,8 +21,10 @@ class SocketDemoPage extends StatefulWidget {
 
 class _SocketDemoPageState extends State<SocketDemoPage> {
   late IO.Socket socket;
-  String message = "No messages yet";
+  List<Map<String, String>> chatHistory = [];
   TextEditingController messageController = TextEditingController();
+  TextEditingController receiverController = TextEditingController();
+  String? clientId;
 
   @override
   void initState() {
@@ -37,12 +39,20 @@ class _SocketDemoPageState extends State<SocketDemoPage> {
 
     socket.onConnect((_) {
       print('Connected to server');
+      clientId = socket.id;
+      print('Your client ID: $clientId');
     });
 
-    socket.on('message', (data) {
-      print('Message from server: $data');
+    socket.on('private-message', (data) {
       setState(() {
-        message = data;
+        chatHistory
+            .add({'senderId': data['senderId'], 'message': data['message']});
+      });
+    });
+
+    socket.on('chat-history', (data) {
+      setState(() {
+        chatHistory = List<Map<String, String>>.from(data);
       });
     });
 
@@ -51,9 +61,21 @@ class _SocketDemoPageState extends State<SocketDemoPage> {
 
   void sendMessage() {
     String text = messageController.text.trim();
-    if (text.isNotEmpty) {
-      socket.emit('message', text);
-      messageController.clear(); // Clear input field
+    String receiverId = receiverController.text.trim();
+
+    if (text.isNotEmpty && receiverId.isNotEmpty) {
+      socket.emit('private-message', {
+        'receiverId': receiverId,
+        'message': text,
+      });
+      messageController.clear();
+    }
+  }
+
+  void loadChatHistory() {
+    String receiverId = receiverController.text.trim();
+    if (receiverId.isNotEmpty) {
+      socket.emit('get-chat-history', receiverId);
     }
   }
 
@@ -67,23 +89,58 @@ class _SocketDemoPageState extends State<SocketDemoPage> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
+            SelectableText(
+              'Your Client ID: ${clientId ?? "Connecting..."}',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 20),
             Expanded(
-              child: Center(
-                child: Text(
-                  message,
-                  style: TextStyle(fontSize: 20),
-                ),
+              child: ListView.builder(
+                itemCount: chatHistory.length,
+                itemBuilder: (context, index) {
+                  final chat = chatHistory[index];
+                  bool isSentByMe = chat['senderId'] == clientId;
+                  return Align(
+                    alignment: isSentByMe
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
+                    child: Container(
+                      margin: EdgeInsets.symmetric(vertical: 5),
+                      padding: EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: isSentByMe ? Colors.blue[100] : Colors.grey[300],
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(chat['message']!),
+                    ),
+                  );
+                },
               ),
             ),
             Row(
               children: [
                 Expanded(
                   child: TextField(
+                    controller: receiverController,
+                    decoration: InputDecoration(
+                      labelText: 'Receiver ID',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: TextFormField(
                     controller: messageController,
                     decoration: InputDecoration(
                       labelText: 'Enter your message',
                       border: OutlineInputBorder(),
                     ),
+                    onFieldSubmitted: (value) {
+                      if (value.trim().isNotEmpty) {
+                        sendMessage(); // Gửi tin nhắn khi nhấn Enter
+                      }
+                    },
                   ),
                 ),
                 SizedBox(width: 10),
@@ -92,6 +149,11 @@ class _SocketDemoPageState extends State<SocketDemoPage> {
                   child: Text('Send'),
                 ),
               ],
+            ),
+            SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: loadChatHistory,
+              child: Text('Load Chat History'),
             ),
           ],
         ),
@@ -103,6 +165,7 @@ class _SocketDemoPageState extends State<SocketDemoPage> {
   void dispose() {
     socket.dispose();
     messageController.dispose();
+    receiverController.dispose();
     super.dispose();
   }
 }
