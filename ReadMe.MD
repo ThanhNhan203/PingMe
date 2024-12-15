@@ -1,0 +1,1 @@
+Ai đọc dòng này làm chó - [ trừ t ra ]
